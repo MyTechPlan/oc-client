@@ -1,7 +1,6 @@
 {
-  // MTP Tenant Configuration Template
-  // Bot token and gateway auth are injected via environment variables:
-  //   TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN
+  // MTP Tenant Configuration — Hardened Template
+  // Secrets injected via environment: TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN, ANTHROPIC_API_KEY
 
   "models": {
     "primary": "anthropic/claude-sonnet-4-5-20250929"
@@ -12,13 +11,13 @@
       "enabled": true,
       "accounts": {
         "default": {
-          // Token comes from TELEGRAM_BOT_TOKEN env var
+          // Token from TELEGRAM_BOT_TOKEN env var
           "dmPolicy": "open",
-          "groupPolicy": "open",
-          "streamMode": "partial",
-          "reactionLevel": "ack"
+          "groupPolicy": "allowlist",
+          "streamMode": "partial"
         }
-      }
+      },
+      "groups": {}  // Populated per-tenant after provisioning
     }
   },
 
@@ -26,14 +25,53 @@
     "defaults": {
       "model": {
         "primary": "anthropic/claude-sonnet-4-5-20250929"
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "heartbeat": {
+        "every": "1h"
       }
+    }
+  },
+
+  // ─── Security: Restrict dangerous tools ────────────────────
+  "tools": {
+    "exec": {
+      "enabled": false  // Tenants cannot run shell commands
+    },
+    "web": {
+      "search": {
+        "enabled": true
+      },
+      "fetch": {
+        "enabled": true
+      }
+    }
+  },
+
+  // No skills pre-installed — MTP admin installs vetted skills only
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
     }
   },
 
   "gateway": {
     "auth": {
-      // Token comes from OPENCLAW_GATEWAY_TOKEN env var
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
+  },
+
+  "messages": {
+    "tts": {
+      "auto": "tagged",
+      "provider": "edge",
+      "edge": {
+        "enabled": true,
+        "voice": "es-AR-TomasNeural",
+        "lang": "es-AR"
+      }
     }
   }
 }
