@@ -1,189 +1,403 @@
 # MTP SaaS — Multi-Tenant OpenClaw Infrastructure
 
-Multi-tenant Docker Compose infrastructure for running OpenClaw instances as agents-as-a-service. Each client gets their own isolated container with Telegram bot integration.
+Multi-tenant Docker Compose infrastructure for running OpenClaw instances as agents-as-a-service. Each client gets their own isolated container with a dedicated Telegram bot, LLM credentials, and workspace — fully separated from other tenants.
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    subgraph Internet
+        TG[Telegram Bot API]
+        LLM[LLM Providers<br/>Anthropic · OpenAI · OpenRouter]
+    end
+
+    subgraph VPS["Hetzner VPS (Docker Host)"]
+        subgraph net["mtp bridge network"]
+            subgraph admin_c["mtp-admin :18789"]
+                ADMIN_GW[OpenClaw Gateway]
+                ADMIN_TG[Telegram Bot<br/>polling]
+                ADMIN_CFG[".openclaw/openclaw.json"]
+            end
+
+            subgraph tenant_a["mtp-acme :18801"]
+                A_GW[OpenClaw Gateway]
+                A_TG[Telegram Bot<br/>polling]
+                A_CFG[".openclaw/openclaw.json"]
+                A_WS["workspace/skills/"]
+            end
+
+            subgraph tenant_b["mtp-beta :18802"]
+                B_GW[OpenClaw Gateway]
+                B_TG[Telegram Bot<br/>polling]
+                B_CFG[".openclaw/openclaw.json"]
+                B_WS["workspace/skills/"]
+            end
+        end
+
+        SOCK["/var/run/docker.sock (ro)"]
+        DATA["./data/ (host volumes)"]
+    end
+
+    TG -- "Bot Token admin" --> ADMIN_TG
+    TG -- "Bot Token acme" --> A_TG
+    TG -- "Bot Token beta" --> B_TG
+
+    ADMIN_GW -- API keys --> LLM
+    A_GW -- API keys --> LLM
+    B_GW -- API keys --> LLM
+
+    SOCK -. "read-only" .-> admin_c
+    DATA -. "volume mount" .-> admin_c
+    DATA -. "volume mount" .-> tenant_a
+    DATA -. "volume mount" .-> tenant_b
+
+    ADMIN_GW -. "ws://acme:18789<br/>RPC: health, config, usage" .-> A_GW
+    ADMIN_GW -. "ws://beta:18789<br/>RPC: health, config, usage" .-> B_GW
+```
+
+### Key points
+
+- **Container-per-tenant isolation**: each tenant has its own process, filesystem, credentials, and Telegram bot. No shared state.
+- **Telegram polling mode**: outbound-only connections — no webhooks, no SSL certs, no reverse proxy. Works behind NAT.
+- **Admin-only Docker socket**: mounted read-only. Tenant containers have zero Docker access.
+- **Internal networking**: admin reaches tenants via Docker DNS (`ws://<tenant>:18789`), no host port needed for inter-container communication.
+- **Host ports are optional**: exposed for direct external access (debugging, monitoring), but not required for operation.
+
+---
 
 ## Prerequisites
 
 - Docker Engine 24+ with Docker Compose v2
-- A server with 4GB+ RAM (Hetzner CX22+ recommended)
-- Telegram bot tokens from [@BotFather](https://t.me/BotFather)
-- LLM provider API key (Anthropic, OpenAI, or OpenRouter)
+- Linux server with 4GB+ RAM (Hetzner CX22+ recommended)
+- Telegram bot token(s) from [@BotFather](https://t.me/BotFather)
+- At least one LLM API key (Anthropic, OpenAI, or OpenRouter)
+- `bash`, `openssl`, `tar`, `sed` (standard on any Linux server)
+
+---
 
 ## Quick Start
 
 ```bash
-# 1. Configure admin instance
+# 1. Copy and fill in admin credentials
 cp .env.example .env
-# Edit .env — fill in ADMIN_* variables
+#    Set: ADMIN_GATEWAY_TOKEN, ADMIN_TELEGRAM_TOKEN, ADMIN_ANTHROPIC_KEY
 
-# 2. Create admin data directory
+# 2. Create admin data directory + config
 mkdir -p data/admin/.openclaw data/admin/workspace
-
-# 3. Copy config template for admin
 cp config/tenant-template.json5 data/admin/.openclaw/openclaw.json
 
-# 4. Start admin
+# 3. Start admin
 docker compose up -d admin
+
+# 4. Verify admin is healthy
+docker inspect --format='{{.State.Health.Status}}' mtp-admin
+#    → "healthy"
 
 # 5. Provision your first tenant
 ./provision-tenant.sh acme 7123456789:AAFxxx sk-ant-api03-xxx
+
+# 6. Check everything
+./status.sh
 ```
+
+---
+
+## Development Phases
+
+### Phase 1 — Local Validation (Day 1)
+
+Get a single admin + one tenant running on your dev machine.
+
+| Step | Command | Validates |
+|------|---------|-----------|
+| Build or pull the OpenClaw image | `docker pull ghcr.io/openclaw/openclaw:main` | Image is accessible |
+| Configure `.env` | `cp .env.example .env` + fill in values | Env var structure works |
+| Start admin | `docker compose up -d admin` | Compose file is valid, health check passes |
+| Provision one tenant | `./provision-tenant.sh test-1 <token> <key>` | Full provisioning flow end-to-end |
+| Send a Telegram message | DM the tenant's bot | Gateway + Telegram polling + LLM round-trip |
+| Check status | `./status.sh` | Status script reads container state |
+| Remove tenant | `./remove-tenant.sh test-1` | Teardown + backup works |
+
+### Phase 2 — Server Deployment (Day 2-3)
+
+Deploy to a Hetzner VPS and validate with real clients.
+
+| Step | Detail |
+|------|--------|
+| Provision VPS | Hetzner CX32 (8GB RAM, ~8 EUR/mo), install Docker |
+| Clone repo | `git clone` + `cd mtp/` |
+| Configure admin | `.env` with production keys |
+| Start admin | `docker compose up -d admin` |
+| Provision 2-3 test tenants | One per team member with their own bot |
+| Verify isolation | Confirm tenants can't see each other's messages/sessions |
+| Test update flow | `./update.sh --no-pull` (rolling restart) |
+| Test backup/restore | `./backup.sh` + delete + re-provision + restore data dir |
+
+### Phase 3 — First Real Clients (Week 1-2)
+
+Onboard paying clients with proper monitoring.
+
+| Step | Detail |
+|------|--------|
+| Onboard 3-5 clients | `provision-tenant.sh` per client |
+| Install custom skills | Edit each tenant's config or use admin RPC |
+| Set up monitoring | Uptime Kuma (self-hosted) hitting each container's health check |
+| Set up backup cron | `crontab -e` → `0 3 * * * /path/to/mtp/backup.sh` |
+| Track usage | Poll `usage.cost` RPC per tenant weekly |
+
+### Phase 4 — Scale & Harden (Month 1+)
+
+| Step | Detail |
+|------|--------|
+| Pin image tags | `OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:v2025.x.y` |
+| Add Docker memory limits | `deploy.resources.limits.memory: 512m` per tenant |
+| Automated billing | Script that polls `usage.cost` and logs to SQLite/spreadsheet |
+| Second VPS | When approaching 20+ tenants, provision another host |
+| Caddy reverse proxy | If exposing Control UI per tenant over HTTPS |
+
+---
+
+## Testing Checklist
+
+Run through this before deploying to production.
+
+### Scripts
+
+- [ ] `provision-tenant.sh` — creates dirs, config, .env entries, override YAML, starts container
+- [ ] `provision-tenant.sh` — rejects duplicate tenant name
+- [ ] `provision-tenant.sh` — rejects "admin" as tenant name
+- [ ] `provision-tenant.sh` — rejects invalid names (uppercase, spaces, special chars)
+- [ ] `provision-tenant.sh` — port auto-increments correctly with multiple tenants
+- [ ] `remove-tenant.sh` — stops container, cleans .env, cleans tenants.conf
+- [ ] `remove-tenant.sh --keep-data` — stops container but preserves data dir
+- [ ] `remove-tenant.sh` — creates final backup before deleting data
+- [ ] `status.sh` — shows admin + all tenants with correct status
+- [ ] `status.sh --json` — outputs valid JSON
+- [ ] `backup.sh` — creates timestamped .tar.gz in backups/
+- [ ] `backup.sh <name>` — backs up only the specified tenant
+- [ ] `backup.sh --list` — lists existing backups with sizes
+- [ ] `update.sh` — pulls image + rolling restart, all containers come back healthy
+- [ ] `update.sh --image <tag>` — uses the specified image (not the default)
+- [ ] `update.sh --no-pull` — skips docker pull, just restarts
+
+### Docker Compose
+
+- [ ] `docker compose config` — renders valid YAML with 0 tenants
+- [ ] `docker compose config` — renders valid YAML with 1+ tenants
+- [ ] Admin container starts and becomes healthy within 30s
+- [ ] Tenant container starts and becomes healthy within 30s
+- [ ] Admin container has Docker socket mounted (read-only)
+- [ ] Tenant containers do NOT have Docker socket
+- [ ] Container logs rotate (max 50MB x 3 files)
+- [ ] Containers restart automatically after `docker restart`
+
+### Tenant Isolation
+
+- [ ] Tenant A cannot read Tenant B's files (different volume mounts)
+- [ ] Tenant A's Telegram bot only receives its own messages
+- [ ] Tenant A's gateway token does not work on Tenant B's gateway
+- [ ] Removing Tenant A does not affect Tenant B
+
+### Telegram Integration
+
+- [ ] Bot responds to DMs in polling mode
+- [ ] Bot responds in group chats when mentioned
+- [ ] Bot reconnects after container restart
+- [ ] Long messages are chunked correctly
+
+### Operations
+
+- [ ] Backup + delete data + re-provision + restore = working tenant
+- [ ] Rolling update keeps at least some tenants available during restart
+- [ ] `docker compose logs -f <tenant>` shows useful output
+- [ ] Health check correctly reports unhealthy when gateway is down
+
+---
 
 ## Directory Structure
 
 ```
 mtp/
-├── docker-compose.yml          # Base compose (admin service)
-├── docker-compose.override.yml # Auto-generated tenant services
-├── .env                        # Secrets (git-ignored)
+├── docker-compose.yml          # Base compose (admin service + YAML anchors)
+├── docker-compose.override.yml # Auto-generated tenant services (gitignored)
+├── .env                        # Secrets (gitignored)
 ├── .env.example                # Template for .env
-├── tenants.conf                # Registry of active tenants
+├── tenants.conf                # Registry: "name port" per line (gitignored)
 ├── config/
-│   └── tenant-template.json5   # Base config for new tenants
-├── data/
-│   ├── admin/                  # Admin instance data
-│   │   ├── .openclaw/          # Config, sessions, credentials
+│   └── tenant-template.json5   # Base OpenClaw config for new tenants
+├── data/                       # Per-tenant runtime data (gitignored)
+│   ├── admin/
+│   │   ├── .openclaw/          # Config, sessions, credentials, agents
 │   │   └── workspace/          # Skills, workspace files
-│   └── <tenant>/               # Per-tenant data (same structure)
-├── backups/                    # Backup archives
-├── provision-tenant.sh         # Add a new tenant
-├── remove-tenant.sh            # Remove a tenant
-├── status.sh                   # Show all tenant status
+│   └── <tenant>/               # Same structure per tenant
+├── backups/                    # Timestamped .tar.gz archives (gitignored)
+│
+├── provision-tenant.sh         # Add a new tenant (full lifecycle)
+├── remove-tenant.sh            # Remove a tenant (with backup)
+├── status.sh                   # Show all container status
 ├── backup.sh                   # Backup tenant data
 ├── update.sh                   # Update image + rolling restart
-└── _generate-override.sh       # Internal: regenerates override YAML
+└── _generate-override.sh       # Internal: rebuilds override YAML from tenants.conf
 ```
 
-## Scripts
+---
 
-### Provision a tenant
+## Scripts Reference
+
+### provision-tenant.sh
 
 ```bash
-./provision-tenant.sh <name> <telegram-token> [anthropic-key]
+./provision-tenant.sh <tenant-name> <telegram-bot-token> [anthropic-key]
 
-# Example:
-./provision-tenant.sh acme 7123456789:AAFxxx sk-ant-api03-xxx
+# Examples:
+./provision-tenant.sh acme   7123456789:AAFxxx  sk-ant-api03-xxx
+./provision-tenant.sh beta   7987654321:BBGyyy  sk-ant-api03-yyy
 ```
 
-This will:
-1. Create `data/<name>/` directory structure
-2. Generate OpenClaw config from template
-3. Add environment variables to `.env`
-4. Register in `tenants.conf`
-5. Regenerate `docker-compose.override.yml`
-6. Start the container
-7. Wait for health check
+What it does:
+1. Validates tenant name (lowercase alphanumeric + hyphens, no "admin")
+2. Generates a 256-bit gateway token (`openssl rand -hex 32`)
+3. Picks the next available port (base: 18801, auto-increments)
+4. Creates `data/<name>/.openclaw/` directory tree
+5. Copies `config/tenant-template.json5` as the tenant's config
+6. Appends env vars to `.env` (prefix: `<UPPER_NAME>_*`)
+7. Registers in `tenants.conf`
+8. Regenerates `docker-compose.override.yml`
+9. Starts the container via `docker compose up -d`
+10. Waits up to 60s for health check
+11. Prints connection details
 
-### Remove a tenant
+### remove-tenant.sh
 
 ```bash
-./remove-tenant.sh <name>              # backs up data, then removes
-./remove-tenant.sh <name> --keep-data  # keeps data directory
+./remove-tenant.sh <tenant-name>              # backup + remove data
+./remove-tenant.sh <tenant-name> --keep-data  # keep data directory
 ```
 
-### Check status
+### status.sh
 
 ```bash
-./status.sh          # table view
-./status.sh --json   # JSON output for scripting
+./status.sh          # formatted table: name, container, port, status, uptime, health, memory
+./status.sh --json   # JSON array for scripting
 ```
 
-### Backup
+### backup.sh
 
 ```bash
-./backup.sh                 # backup all tenants
-./backup.sh <name>          # backup specific tenant
-./backup.sh --list          # list existing backups
+./backup.sh                 # backup all tenants + admin
+./backup.sh <tenant-name>   # backup one tenant
+./backup.sh --list          # list existing backups with sizes
 ```
 
-### Update OpenClaw
+### update.sh
 
 ```bash
-./update.sh                              # pull latest + rolling restart
-./update.sh --image ghcr.io/...:v2.0.0   # use specific image tag
-./update.sh --no-pull                     # restart without pulling
+./update.sh                                    # pull latest image + rolling restart
+./update.sh --image ghcr.io/openclaw/openclaw:v2025.2.13   # pin to specific tag
+./update.sh --no-pull                          # restart containers without pulling
 ```
 
-## Architecture
+Always creates a pre-update backup automatically.
 
-Each tenant runs in an isolated Docker container:
-- **Own filesystem**: config, sessions, credentials, workspace
-- **Own Telegram bot**: polling mode (no webhook complexity)
-- **Own gateway token**: for admin API access
-- **Shared Docker network**: admin can reach tenants internally via `ws://<name>:18789`
-
-```
-┌─────────────────────────────────────────────┐
-│  Docker Host                                │
-│                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │  admin   │  │  acme    │  │  beta    │  │
-│  │  :18789  │  │  :18801  │  │  :18802  │  │
-│  │  +docker │  │          │  │          │  │
-│  │  socket  │  │          │  │          │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
-│       │  mtp network │             │        │
-│       └──────────────┴─────────────┘        │
-└─────────────────────────────────────────────┘
-```
-
-The admin container has read-only access to the Docker socket for container management. Tenant containers have no Docker socket access.
+---
 
 ## Environment Variables
 
-Each tenant uses the pattern `<PREFIX>_<VAR>` where prefix is the uppercase tenant name with hyphens replaced by underscores:
+### Admin
 
-| Variable | Description |
-|----------|-------------|
-| `<PREFIX>_GATEWAY_TOKEN` | Auto-generated bearer token for WS/HTTP auth |
-| `<PREFIX>_TELEGRAM_TOKEN` | Telegram bot token from @BotFather |
-| `<PREFIX>_ANTHROPIC_KEY` | Anthropic API key |
-| `<PREFIX>_OPENAI_KEY` | OpenAI API key (optional) |
-| `<PREFIX>_OPENROUTER_KEY` | OpenRouter API key (optional) |
-| `<PREFIX>_PORT` | Host port mapping |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENCLAW_IMAGE` | No | Docker image (default: `ghcr.io/openclaw/openclaw:main`) |
+| `ADMIN_GATEWAY_TOKEN` | **Yes** | Bearer token for admin gateway auth |
+| `ADMIN_TELEGRAM_TOKEN` | No | Admin's Telegram bot token |
+| `ADMIN_ANTHROPIC_KEY` | No | Admin's Anthropic API key |
+| `ADMIN_OPENAI_KEY` | No | Admin's OpenAI API key |
+| `ADMIN_OPENROUTER_KEY` | No | Admin's OpenRouter API key |
+| `ADMIN_PORT` | No | Host port (default: 18789) |
+
+### Per-tenant (auto-generated by provision script)
+
+Prefix = uppercase tenant name, hyphens → underscores. E.g., `client-a` → `CLIENT_A_*`.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `<PREFIX>_GATEWAY_TOKEN` | **Yes** | Auto-generated, required for container startup |
+| `<PREFIX>_TELEGRAM_TOKEN` | **Yes** | From @BotFather, required for container startup |
+| `<PREFIX>_ANTHROPIC_KEY` | No | Anthropic API key |
+| `<PREFIX>_OPENAI_KEY` | No | OpenAI API key |
+| `<PREFIX>_OPENROUTER_KEY` | No | OpenRouter API key |
+| `<PREFIX>_PORT` | No | Host port (auto-assigned) |
+
+---
 
 ## Tenant Config
 
-The base config template (`config/tenant-template.json5`) uses env var substitution for secrets. Edit it to change defaults for new tenants. Existing tenants keep their config in `data/<name>/.openclaw/openclaw.json`.
+Base template: `config/tenant-template.json5`
+
+Edit the template to change defaults for **new** tenants. Existing tenants keep their config at `data/<name>/.openclaw/openclaw.json`.
 
 Key settings:
-- **`channels.telegram.accounts.default.dmPolicy`**: `"open"` (anyone can DM), `"pairing"` (approval required), `"allowlist"`
-- **`channels.telegram.accounts.default.groupPolicy`**: `"open"`, `"allowlist"`, `"disabled"`
-- **`models.primary`**: Default LLM model for the tenant
+
+| Setting | Default | Options |
+|---------|---------|---------|
+| `channels.telegram.accounts.default.dmPolicy` | `"open"` | `"open"`, `"pairing"` (approval flow), `"allowlist"` |
+| `channels.telegram.accounts.default.groupPolicy` | `"open"` | `"open"`, `"allowlist"`, `"disabled"` |
+| `channels.telegram.accounts.default.streamMode` | `"partial"` | `"off"`, `"partial"`, `"block"` |
+| `models.primary` | `anthropic/claude-sonnet-4-5-20250929` | Any supported model ID |
+
+Secrets use env var substitution: `"token": "${OPENCLAW_GATEWAY_TOKEN}"` resolves at runtime from the container's environment.
+
+---
 
 ## Admin API
 
-The admin can interact with tenant gateways via WebSocket RPC from within the Docker network:
+Admin can manage tenants remotely via WebSocket RPC on the internal Docker network:
 
-```bash
-# From admin container, reach tenant "acme":
-# ws://acme:18789 (using acme's gateway token)
-
-# Key RPC methods:
-# health         — check tenant health
-# config.get     — read tenant config
-# config.patch   — modify tenant config
-# agent          — send message to tenant's agent
-# usage.cost     — get LLM usage/cost data
-# sessions.list  — list active sessions
-# channels.status — check Telegram connection
 ```
+ws://acme:18789  (using acme's GATEWAY_TOKEN as bearer auth)
+```
+
+| RPC Method | Purpose |
+|------------|---------|
+| `health` | Check gateway + channel status |
+| `config.get` | Read tenant config |
+| `config.patch` | Modify tenant config live (hot-reload) |
+| `agent` | Send a message to the tenant's AI agent |
+| `send` | Send a message to a channel |
+| `usage.cost` | Get LLM usage and cost data |
+| `sessions.list` | List active conversation sessions |
+| `channels.status` | Check Telegram connection health |
+| `skills.install` | Install a skill remotely |
+| `skills.status` | List installed skills |
+
+---
 
 ## Onboarding a New Client
 
-1. **Create Telegram bot**: Open Telegram → @BotFather → `/newbot` → get token (~30s)
-2. **Get API key**: Client provides their Anthropic/OpenAI key, or use a shared key
-3. **Provision**: `./provision-tenant.sh <name> <telegram-token> <api-key>`
-4. **Create Telegram group**: Add bot + client to a shared group
-5. **Customize**: Edit `data/<name>/.openclaw/openclaw.json` as needed
-6. **Install skills**: Via admin API or direct config edit
+| Step | Time | Automated? |
+|------|------|------------|
+| 1. Create Telegram bot via @BotFather `/newbot` | ~30s | Manual |
+| 2. Get LLM API key (client provides, or use shared key) | varies | Manual |
+| 3. Run `./provision-tenant.sh <name> <token> <key>` | ~30s | Script |
+| 4. Create Telegram group, add bot + client | ~30s | Manual |
+| 5. Customize config (optional) | ~2min | Manual |
+| 6. Install skills (optional) | ~1min | RPC or manual |
+
+**Total: ~2-5 minutes per client.**
+
+---
 
 ## Resource Estimates
 
-| VPS Size | RAM | Idle Tenants | Active (concurrent) |
-|----------|-----|-------------|-------------------|
-| 4 GB     | CX22 | ~10-15 | 3-5 |
-| 8 GB     | CX32 | ~25-30 | 8-12 |
-| 16 GB    | CX42 | ~55-65 | 15-25 |
+~200MB RAM per idle tenant. Active LLM calls spike temporarily.
 
-Each idle tenant uses ~200MB RAM. Active LLM calls spike temporarily.
+| VPS | RAM | Monthly Cost | Idle Tenants | Active (concurrent) |
+|-----|-----|-------------|-------------|-------------------|
+| CX22 | 4 GB | ~4 EUR | 10-15 | 3-5 |
+| CX32 | 8 GB | ~8 EUR | 25-30 | 8-12 |
+| CX42 | 16 GB | ~16 EUR | 55-65 | 15-25 |
+| CX52 | 32 GB | ~30 EUR | 120-130 | 30-50 |
+
+**Recommendation for MVP (10-20 clients): CX32 (8GB).**
