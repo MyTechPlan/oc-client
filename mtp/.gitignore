@@ -1,0 +1,12 @@
+# Secrets
+.env
+
+# Tenant data (volume-mounted runtime data)
+data/
+
+# Auto-generated
+docker-compose.override.yml
+tenants.conf
+
+# Backups
+backups/

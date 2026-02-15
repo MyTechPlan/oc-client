@@ -1,0 +1,39 @@
+{
+  // MTP Tenant Configuration Template
+  // Bot token and gateway auth are injected via environment variables:
+  //   TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN
+
+  "models": {
+    "primary": "anthropic/claude-sonnet-4-5-20250929"
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          // Token comes from TELEGRAM_BOT_TOKEN env var
+          "dmPolicy": "open",
+          "groupPolicy": "open",
+          "streamMode": "partial",
+          "reactionLevel": "ack"
+        }
+      }
+    }
+  },
+
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-5-20250929"
+      }
+    }
+  },
+
+  "gateway": {
+    "auth": {
+      // Token comes from OPENCLAW_GATEWAY_TOKEN env var
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
+  }
+}
