@@ -43,8 +43,8 @@ if [[ -f "$_TENANTS_FILE" ]] && [[ -s "$_TENANTS_FILE" ]]; then
       HOME: /home/node
       TERM: xterm-256color
       NODE_ENV: production
-      OPENCLAW_GATEWAY_TOKEN: \${${env_prefix}_GATEWAY_TOKEN}
-      TELEGRAM_BOT_TOKEN: \${${env_prefix}_TELEGRAM_TOKEN}
+      OPENCLAW_GATEWAY_TOKEN: \${${env_prefix}_GATEWAY_TOKEN:?${env_prefix}_GATEWAY_TOKEN is required}
+      TELEGRAM_BOT_TOKEN: \${${env_prefix}_TELEGRAM_TOKEN:?${env_prefix}_TELEGRAM_TOKEN is required}
       ANTHROPIC_API_KEY: \${${env_prefix}_ANTHROPIC_KEY:-}
       OPENAI_API_KEY: \${${env_prefix}_OPENAI_KEY:-}
       OPENROUTER_API_KEY: \${${env_prefix}_OPENROUTER_KEY:-}
