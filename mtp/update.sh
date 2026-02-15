@@ -44,6 +44,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Ensure docker compose uses the selected image for this run.
+export OPENCLAW_IMAGE="$IMAGE"
+
 # ─── Compose files ────────────────────────────────────────────
 
 COMPOSE_FILES=("-f" "$ROOT_DIR/docker-compose.yml")

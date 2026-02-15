@@ -8,7 +8,7 @@ set -euo pipefail
 #   ./remove-tenant.sh <tenant-name> [--keep-data]
 #
 # Options:
-#   --keep-data   Don't delete the tenant's data directory (default: prompt)
+#   --keep-data   Don't delete the tenant's data directory (default: backup then delete)
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TENANTS_FILE="$ROOT_DIR/tenants.conf"

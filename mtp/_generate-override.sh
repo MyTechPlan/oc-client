@@ -6,7 +6,6 @@
 _ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 _TENANTS_FILE="${TENANTS_FILE:-$_ROOT_DIR/tenants.conf}"
 _OVERRIDE_FILE="${OVERRIDE_FILE:-$_ROOT_DIR/docker-compose.override.yml}"
-_ENV_FILE="${ENV_FILE:-$_ROOT_DIR/.env}"
 
 # Start the override file
 cat > "$_OVERRIDE_FILE" <<'HEADER'
@@ -14,11 +13,11 @@ cat > "$_OVERRIDE_FILE" <<'HEADER'
 # DO NOT EDIT — changes will be overwritten.
 # Modify tenants via provision-tenant.sh / remove-tenant.sh
 
-services:
 HEADER
 
 # Read tenants.conf and generate a service block for each
 if [[ -f "$_TENANTS_FILE" ]] && [[ -s "$_TENANTS_FILE" ]]; then
+  echo "services:" >> "$_OVERRIDE_FILE"
   while IFS=' ' read -r name port; do
     # Skip empty lines and comments
     [[ -z "$name" || "$name" == \#* ]] && continue
@@ -80,7 +79,7 @@ EOF
   done < "$_TENANTS_FILE"
 else
   # No tenants — write an empty services block so the file is valid YAML
-  echo "  {} # No tenants provisioned yet" >> "$_OVERRIDE_FILE"
+  echo "services: {}" >> "$_OVERRIDE_FILE"
 fi
 
 # Add network reference (must match base compose)
