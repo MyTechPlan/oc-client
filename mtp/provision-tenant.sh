@@ -78,9 +78,44 @@ fi
 TENANT_DATA="$ROOT_DIR/data/$TENANT_NAME"
 mkdir -p "$TENANT_DATA/.openclaw/credentials"
 mkdir -p "$TENANT_DATA/.openclaw/agents"
+mkdir -p "$TENANT_DATA/workspace/.openclaw"
 mkdir -p "$TENANT_DATA/workspace/skills"
+mkdir -p "$TENANT_DATA/workspace/memory"
 
 echo "  Created data directories: data/$TENANT_NAME/"
+
+# ─── Copy workspace templates ────────────────────────────────
+
+TEMPLATES_DIR="$ROOT_DIR/config/templates"
+if [[ -d "$TEMPLATES_DIR" ]]; then
+  # Copy shared service info (read-only reference)
+  cp "$TEMPLATES_DIR/MTP-SERVICE.md" "$TENANT_DATA/workspace/"
+  cp "$TEMPLATES_DIR/AGENTS.md" "$TENANT_DATA/workspace/"
+  cp "$TEMPLATES_DIR/BOOTSTRAP.md" "$TENANT_DATA/workspace/"
+  cp "$TEMPLATES_DIR/HEARTBEAT.md" "$TENANT_DATA/workspace/"
+
+  # Process SOUL template with placeholders
+  if [[ -f "$TEMPLATES_DIR/SOUL-template.md" ]]; then
+    BOT_DISPLAY_NAME=$(echo "$TENANT_NAME" | sed 's/./\U&/' )  # Capitalize first letter
+    sed -e "s/{{BOT_NAME}}/$BOT_DISPLAY_NAME/g" \
+        -e "s/{{CLIENT_NAME}}/(pendiente de onboarding)/g" \
+        -e "s/{{BOT_CONTEXT}}/Contexto pendiente — se completará durante el onboarding./g" \
+        "$TEMPLATES_DIR/SOUL-template.md" > "$TENANT_DATA/workspace/SOUL.md"
+  fi
+
+  # Process USER template with placeholders
+  if [[ -f "$TEMPLATES_DIR/USER-template.md" ]]; then
+    sed -e "s/{{CLIENT_NAME}}/(pendiente)/g" \
+        -e "s/{{CLIENT_NICKNAME}}/(pendiente)/g" \
+        -e "s/{{CLIENT_EMAIL}}/(pendiente)/g" \
+        -e "s/{{CLIENT_TIMEZONE}}/Europe\/Madrid/g" \
+        "$TEMPLATES_DIR/USER-template.md" > "$TENANT_DATA/workspace/USER.md"
+  fi
+
+  echo "  Copied workspace templates (BOOTSTRAP, SOUL, USER, AGENTS, MTP-SERVICE)"
+else
+  echo "  Warning: templates directory not found at $TEMPLATES_DIR" >&2
+fi
 
 # ─── Generate config from template ───────────────────────────
 
