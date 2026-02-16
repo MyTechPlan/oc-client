@@ -466,3 +466,45 @@ ws://acme:18789  (using acme's GATEWAY_TOKEN as bearer auth)
 | CX52 | 32 GB | ~30 EUR | 120-130 | 30-50 |
 
 **Recommendation for MVP (10-20 clients): CX32 (8GB).**
+
+---
+
+## Lobster (Workflow Engine)
+
+[Lobster](https://github.com/openclaw/lobster) is a workflow/pipeline engine that runs multi-step tasks with checkpoints. Installed in all tenant containers.
+
+### How it works
+
+- **Binary:** Cloned to `mtp/lobster/`, mounted read-only at `/opt/lobster` in each container
+- **Wrapper:** `lobster` shell script → `node /opt/lobster/bin/lobster.js`
+- **PATH:** `/opt/lobster` added to container PATH
+- **Plugin:** Enabled via `tools.alsoAllow: ["lobster"]` in tenant config
+
+### Version
+
+Current: **2026.1.21-1**
+
+### Usage (inside containers)
+
+```bash
+# Run a pipeline
+lobster run path/to/pipeline.lobster
+
+# List available pipelines
+lobster list
+```
+
+### Pipelines
+
+| Pipeline | Location | Description |
+|----------|----------|-------------|
+| `first-site.lobster` | `mtp/skills/web-deploy/` | Onboarding web: 5-phase site creation flow |
+
+### Updating Lobster
+
+```bash
+cd mtp/lobster
+git pull
+# Then recreate containers:
+docker compose up -d --force-recreate
+```
