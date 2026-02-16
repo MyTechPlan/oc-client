@@ -458,7 +458,14 @@ install_web_app() {
     -H "Content-Type: application/json" \
     -d '{"query": "NOTIFY pgrst, '\''reload config'\''"}' > /dev/null
   
-  log "Schema tenant_${TENANT} creado en Supabase"
+  # Security: revoke anon access to tenant schema (only authenticated users)
+  info "Revocando acceso anon al schema..."
+  curl -s -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"query\": \"REVOKE ALL ON SCHEMA tenant_${TENANT} FROM anon; REVOKE ALL ON ALL TABLES IN SCHEMA tenant_${TENANT} FROM anon;\"}" > /dev/null
+  
+  log "Schema tenant_${TENANT} creado en Supabase (anon revocado)"
   
   # Vercel project for app
   local app_project="taas-${TENANT}-app"
