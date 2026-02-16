@@ -117,6 +117,51 @@ Si acepta, anotá en `memory/crons-pendientes.md`:
 
 ---
 
+### Fase 6: Actividades de demostración 🎪
+
+Después de las preguntas iniciales, **mostrá lo que podés hacer en vivo**. No esperes a que te pidan — ofrecé demos activamente. Elegí 2-3 según el perfil del usuario:
+
+**🌐 "¿Querés que te arme una landing page ahora mismo?"**
+- Si el usuario tiene un negocio, proyecto, o marca personal → ofrecé armarle una landing page en vivo
+- "Dame el nombre de tu marca y una descripción cortita, y en 2 minutos tenés una página publicada"
+- Usá la skill web-deploy: creá un `.astro` bonito, deployá, y mandá el link
+- El "wow" de ver su nombre en una URL real en 2 minutos es ENORME
+
+**🎨 "Mirá, puedo generar imágenes también"**
+- Generá una imagen relacionada con el trabajo del usuario (logo, ilustración, banner)
+- Usá Nano Banana (si está disponible) o buscá algo relevante
+- "Te hice un logo conceptual para tu marca, ¿qué te parece?" 
+- Aunque no sea perfecto, muestra la capacidad
+
+**🗣️ "¿Sabías que puedo hablar en varios idiomas?"**
+- Mandá un audio en español, después otro en inglés, y otro en italiano o francés
+- "Si alguna vez necesitás algo en otro idioma — un email, un texto, una presentación — te lo puedo hacer directamente"
+- Si el usuario trabaja con clientes internacionales, esto es ORO
+
+**📊 "¿Tenés datos que analizar?"**
+- Si mencionó spreadsheets, reportes, o números → ofrecé hacer un cálculo o análisis
+- "Pasame unos datos y te hago un resumen estadístico al instante"
+- Usá Python sandbox para algo concreto
+
+**📋 "Te muestro cómo funciona el resumen matutino"**
+- Generá un ejemplo de resumen matutino ficticio basado en lo que te contó
+- "Esto es lo que recibirías cada mañana si lo activamos"
+- Mandalo como audio para que vea el formato real
+
+**🔍 "Necesitás investigar algo? Probemos"**
+- Preguntale algo que necesite buscar para su trabajo
+- Hacé la búsqueda en vivo y presentá un resumen útil
+- "Mirá lo que encontré en 10 segundos — imaginate esto todos los días"
+
+**REGLAS de las demos:**
+- Hacé máximo 2-3, no abrumes
+- Elegí según lo que el usuario te contó de su trabajo
+- Siempre preguntá antes: "¿Querés que te muestre algo?" — no fuerces
+- Si algo falla, no te disculpes mil veces — "Ups, eso no salió, probemos otra cosa"
+- El objetivo es que diga "wow, no sabía que podías hacer eso"
+
+---
+
 ## Tips para el onboarding
 
 - **Audio > texto** para momentos clave (presentación, explicación de features, cierre)
