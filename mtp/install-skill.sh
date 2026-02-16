@@ -423,12 +423,34 @@ install_web_app() {
     -H "Content-Type: application/json" \
     -d "{\"query\": \"CREATE SCHEMA IF NOT EXISTS tenant_${TENANT};\"}" > /dev/null
   
-  # Expose schema in PostgREST
+  # Expose schema in PostgREST (APPEND, don't replace — other tenants may already be exposed)
   info "Exponiendo schema en PostgREST..."
   curl -s -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
     -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{\"query\": \"ALTER ROLE authenticator SET pgrst.db_schemas TO 'public, tenant_${TENANT}';\"}" > /dev/null
+    -d "{\"query\": \"DO \\$\\$ DECLARE current_schemas text; BEGIN SELECT setting INTO current_schemas FROM pg_catalog.pg_db_role_setting rs JOIN pg_catalog.pg_roles r ON r.oid = rs.setrole WHERE r.rolname = 'authenticator' LIMIT 1; IF current_schemas IS NULL OR current_schemas NOT LIKE '%tenant_${TENANT}%' THEN IF current_schemas IS NULL THEN EXECUTE format('ALTER ROLE authenticator SET pgrst.db_schemas TO %L', 'public, tenant_${TENANT}'); ELSE EXECUTE format('ALTER ROLE authenticator SET pgrst.db_schemas TO %L', regexp_replace(current_schemas, 'pgrst.db_schemas=', '') || ', tenant_${TENANT}'); END IF; END IF; END \\$\\$;\"}" > /dev/null
+  
+  # Simpler fallback: just SET with all known schemas (read current + add new)
+  # Get current schemas and append
+  local current_schemas
+  current_schemas=$(curl -s -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"query": "SELECT string_agg(nspname, '\'', '\'') FROM pg_namespace WHERE nspname LIKE '\''tenant_%'\''"}' | python3 -c 'import json,sys;rows=json.load(sys.stdin);print(rows[0].get("string_agg","") if rows else "")' 2>/dev/null)
+  
+  local all_schemas="public"
+  if [[ -n "$current_schemas" ]]; then
+    all_schemas="public, $current_schemas"
+  fi
+  # Ensure current tenant is included
+  if [[ "$all_schemas" != *"tenant_${TENANT}"* ]]; then
+    all_schemas="$all_schemas, tenant_${TENANT}"
+  fi
+  
+  curl -s -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"query\": \"ALTER ROLE authenticator SET pgrst.db_schemas TO '${all_schemas}';\"}" > /dev/null
   
   # Notify PostgREST to reload config
   curl -s -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
