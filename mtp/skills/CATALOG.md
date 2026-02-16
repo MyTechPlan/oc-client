@@ -45,6 +45,17 @@ Para solicitar una nueva skill → generá un ticket (ver MTP-SERVICE.md).
 
 ---
 
+## 🔵 Instalables via `install-skill.sh`
+
+### Monday.com 🆕
+- **Qué hace:** Gestionar boards, items y tareas en Monday.com
+- **API:** GraphQL directa (sin intermediarios)
+- **Requiere:** API token personal del cliente
+- **Operaciones:** Leer boards, crear/editar items, cambiar estados, agregar comentarios
+- **Instalar:** `./install-skill.sh <tenant> monday`
+
+---
+
 ## 🟡 Disponibles bajo demanda (instalación por MTP)
 
 ### Email (SMTP)
