@@ -39,6 +39,7 @@ skill_desc() {
     web-deploy)      echo "Sitio web estático (Astro + Vercel)" ;;
     web-app)         echo "Web app con DB y auth (React + Supabase + Vercel)" ;;
     python-sandbox)  echo "Ejecución segura de código Python" ;;
+    monday)          echo "Gestión de boards y tareas en Monday.com (GraphQL)" ;;
     *) echo "Skill desconocida" ;;
   esac
 }
@@ -48,18 +49,19 @@ skill_scope() {
     web-deploy)      echo "Landing pages, portfolios, blogs, CVs. El bot edita archivos .astro y deploya con un script. NO puede instalar paquetes ni tocar configs." ;;
     web-app)         echo "Apps interactivas con base de datos y login Google. CRUD, dashboards, formularios. El bot edita React/TS y deploya. NO puede crear tablas (ticket a MTP)." ;;
     python-sandbox)  echo "Cálculos, estadísticas, análisis de datos, conversiones. Ejecuta Python en sandbox seguro. SIN acceso a archivos, red, o sistema." ;;
+    monday)          echo "Leer boards/items, crear tareas, actualizar estados, agregar comentarios en Monday.com. Requiere API token del cliente." ;;
     *) echo "" ;;
   esac
 }
 
 is_valid_skill() {
   case "$1" in
-    web-deploy|web-app|python-sandbox) return 0 ;;
+    web-deploy|web-app|python-sandbox|monday) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-AVAILABLE_SKILLS="web-deploy web-app python-sandbox"
+AVAILABLE_SKILLS="web-deploy web-app python-sandbox monday"
 
 # ─── Args ─────────────────────────────────────────────────────
 
@@ -590,6 +592,86 @@ EOF
   fi
 }
 
+# ─── Install: monday ──────────────────────────────────────────
+
+install_monday() {
+  # Copy skill
+  mkdir -p "$WORKSPACE/skills/monday"
+  cp "$SKILLS_DIR/monday/SKILL.md" "$WORKSPACE/skills/monday/"
+  
+  # Check if API token is configured
+  local config_file="$DATA_DIR/.openclaw/openclaw.json"
+  
+  # Prompt for API token if not set
+  echo ""
+  info "Monday.com necesita el API token personal del cliente."
+  echo "  El cliente lo obtiene desde: Monday.com → Avatar → Developers → My Access Tokens"
+  echo ""
+  read -p "¿Tenés el API token? (pégalo, o 'skip' para configurar después): " monday_token
+  
+  if [[ -n "$monday_token" && "$monday_token" != "skip" ]]; then
+    # Add to docker-compose env for this tenant
+    info "Guardando token..."
+    
+    # Add MONDAY_API_TOKEN to the tenant's env in docker-compose override
+    local override_file="$ROOT_DIR/docker-compose.override.yml"
+    if [[ -f "$override_file" ]]; then
+      # Add env var to tenant service
+      local env_prefix
+      env_prefix=$(echo "$TENANT" | tr '[:lower:]-' '[:upper:]_')
+      
+      # Store in .env
+      local env_file="$ROOT_DIR/.env"
+      if ! grep -q "${env_prefix}_MONDAY_TOKEN" "$env_file" 2>/dev/null; then
+        echo "${env_prefix}_MONDAY_TOKEN=$monday_token" >> "$env_file"
+      fi
+      
+      # Note: Need to add MONDAY_API_TOKEN to docker-compose override manually
+      warn "Agregá MONDAY_API_TOKEN al docker-compose.override.yml del tenant $TENANT:"
+      echo "    environment:"
+      echo "      - MONDAY_API_TOKEN=\${${env_prefix}_MONDAY_TOKEN}"
+      echo ""
+      echo "  Y luego: docker compose restart $TENANT"
+    fi
+    
+    # Verify token works
+    info "Verificando conexión a Monday.com..."
+    local test_resp
+    test_resp=$(curl -s -X POST https://api.monday.com/v2 \
+      -H "Authorization: $monday_token" \
+      -H "Content-Type: application/json" \
+      -H "API-Version: 2024-10" \
+      -d '{"query": "{ me { id name email } }"}')
+    
+    local user_name
+    user_name=$(echo "$test_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("data",{}).get("me",{}).get("name",""))' 2>/dev/null)
+    
+    if [[ -n "$user_name" ]]; then
+      log "Conexión exitosa! Usuario: $user_name"
+    else
+      warn "No se pudo verificar el token. Revisá que sea correcto."
+    fi
+  else
+    info "Token no configurado. El cliente deberá proporcionarlo durante el onboarding."
+    echo "  Vesta le pedirá el token cuando intente usar Monday."
+  fi
+  
+  # Update TOOLS.md
+  if ! grep -q "Monday" "$TOOLS_FILE" 2>/dev/null; then
+    cat >> "$TOOLS_FILE" << 'EOF'
+
+## Monday.com (project management)
+- **Skill:** `skills/monday/SKILL.md`
+- **API:** GraphQL → https://api.monday.com/v2
+- **Auth:** Token personal del cliente ($MONDAY_API_TOKEN)
+- **Uso:** Leer boards, crear items, actualizar estados, agregar comentarios
+- NO crear/eliminar boards — ticket a MTP
+EOF
+  fi
+  
+  log "monday instalada"
+}
+
 # ─── Commit and push ─────────────────────────────────────────
 
 commit_and_push() {
@@ -617,6 +699,9 @@ case "$SKILL" in
     ;;
   web-app)
     install_web_app
+    ;;
+  monday)
+    install_monday
     ;;
   *)
     err "Skill '$SKILL' no tiene instalador implementado"
