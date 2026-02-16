@@ -216,6 +216,65 @@ Run through this before deploying to production.
 
 ---
 
+## Admin Dashboard
+
+Web-based admin panel for monitoring and managing tenants remotely. Deployed on Vercel.
+
+**URL:** https://admin-neon-beta.vercel.app
+**Auth:** Password-based (JWT cookie)
+**Source:** `mtp/admin/`
+
+### Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Login** | ✅ | Password auth with JWT cookies |
+| **Tenant overview** | ✅ | Dashboard with tenant cards |
+| **File tree** | ✅ | Navigable folder structure per tenant (collapsible dirs) |
+| **File editor** | ✅ | View/edit any file, save commits to GitHub |
+| **Cron jobs** | ✅ | View all scheduled jobs with expandable details |
+| **Logs** | 🔜 | Placeholder — requires tunnel for real-time access |
+
+### How it works
+
+- Reads/writes tenant files via **GitHub API** (repos `MyTechPlan/taas-{tenant}`)
+- Cron jobs read from `.openclaw/cron/jobs.json` snapshots committed to repos
+- No direct Docker access needed — works from anywhere
+- Auto-detects repo structure (`workspace/` prefix vs root)
+
+### Tech Stack
+
+- Next.js 14 (App Router) + Tailwind CSS
+- Octokit (GitHub API) for file operations
+- Dark theme, responsive
+
+### Env vars (Vercel)
+
+| Variable | Description |
+|----------|-------------|
+| `ADMIN_PASSWORD` | Login password |
+| `JWT_SECRET` | Secret for signing auth tokens |
+| `GITHUB_TOKEN` | GitHub PAT with repo access to `MyTechPlan/taas-*` |
+
+### Adding a new tenant to the dashboard
+
+Edit `lib/tenants.ts` and add the tenant to the config array:
+
+```typescript
+{ id: 'newtenant', name: 'NewTenant', repo: 'MyTechPlan/taas-newtenant' }
+```
+
+Then redeploy: `cd mtp/admin && vercel --prod`
+
+### Roadmap
+
+- **Logs tab**: Real-time container logs via Cloudflare Tunnel or session transcript viewer
+- **Cron editing**: CRUD operations via Gateway API (requires tunnel)
+- **Container status**: Health, uptime, memory usage
+- **Usage/billing**: LLM token usage and cost tracking per tenant
+
+---
+
 ## Directory Structure
 
 ```
@@ -233,6 +292,12 @@ mtp/
 │   │   └── workspace/          # Skills, workspace files
 │   └── <tenant>/               # Same structure per tenant
 ├── backups/                    # Timestamped .tar.gz archives (gitignored)
+│
+├── admin/                      # Admin Dashboard (Next.js, deployed on Vercel)
+│   ├── app/                    # Pages + API routes
+│   ├── components/             # React components (TenantDetail, FileEditor, etc.)
+│   ├── lib/                    # GitHub API, auth, tenant config
+│   └── package.json
 │
 ├── provision-tenant.sh         # Add a new tenant (full lifecycle)
 ├── remove-tenant.sh            # Remove a tenant (with backup)
