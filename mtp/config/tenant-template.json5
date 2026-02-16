@@ -1,0 +1,77 @@
+{
+  // MTP Tenant Configuration — Hardened Template
+  // Secrets injected via environment: TELEGRAM_BOT_TOKEN, OPENCLAW_GATEWAY_TOKEN, ANTHROPIC_API_KEY
+
+  "models": {
+    "primary": "anthropic/claude-sonnet-4-5-20250929"
+  },
+
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "accounts": {
+        "default": {
+          // Token from TELEGRAM_BOT_TOKEN env var
+          "dmPolicy": "open",
+          "groupPolicy": "allowlist",
+          "streamMode": "partial"
+        }
+      },
+      "groups": {}  // Populated per-tenant after provisioning
+    }
+  },
+
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-sonnet-4-5-20250929"
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "heartbeat": {
+        "every": "1h"
+      }
+    }
+  },
+
+  // ─── Security: Restrict dangerous tools ────────────────────
+  "tools": {
+    "exec": {
+      "enabled": false  // Tenants cannot run shell commands
+    },
+    "web": {
+      "search": {
+        "enabled": true
+      },
+      "fetch": {
+        "enabled": true
+      }
+    }
+  },
+
+  // No skills pre-installed — MTP admin installs vetted skills only
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
+    }
+  },
+
+  "gateway": {
+    "auth": {
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    }
+  },
+
+  "messages": {
+    "tts": {
+      "auto": "tagged",
+      "provider": "edge",
+      "edge": {
+        "enabled": true,
+        "voice": "es-AR-TomasNeural",
+        "lang": "es-AR"
+      }
+    }
+  }
+}
